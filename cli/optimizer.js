@@ -343,6 +343,22 @@ async function optimizeEpub(inputPath, outputPath, options) {
                 const oldHref = path.relative(path.dirname(opfPath), oldImg) || path.basename(oldImg);
                 const newHref = path.relative(path.dirname(opfPath), newImg) || path.basename(newImg);
                 opf = opf.split(oldHref).join(newHref);
+                // Update id attribute (typically the basename without path)
+                const oldBasename = path.basename(oldImg);
+                const newBasename = path.basename(newImg);
+                if (oldBasename !== newBasename) {
+                    const oldIdEsc = oldBasename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const hrefEscForId = newHref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    // Handle either attribute order (id before or after href)
+                    opf = opf.replace(
+                        new RegExp('(<item\\b[^>]*\\bhref="' + hrefEscForId + '"[^>]*?)\\bid="' + oldIdEsc + '"'),
+                        '$1id="' + newBasename + '"'
+                    );
+                    opf = opf.replace(
+                        new RegExp('(<item\\b[^>]*?)\\bid="' + oldIdEsc + '"([^>]*\\bhref="' + hrefEscForId + '")'),
+                        '$1id="' + newBasename + '"$2'
+                    );
+                }
                 // Update media-type for converted images (handle either attribute order)
                 const hrefEsc = newHref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 opf = opf.replace(

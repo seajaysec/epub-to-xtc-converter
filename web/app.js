@@ -1770,6 +1770,7 @@ async function optimizeEpub(file) {
 
     // Process each file in the EPUB
     var files = Object.keys(epubZip.files);
+    var imageRenames = {};
 
     for (var i = 0; i < files.length; i++) {
         var path = files[i];
@@ -1804,9 +1805,22 @@ async function optimizeEpub(file) {
             epubZip.file(path, html);
         }
 
-        // Remove unsupported image formats (can't reliably process in browser, won't display on device)
+        // Remove unsupported image formats (try converting to JPEG first, remove on failure)
         if (settings.processImages && settings.removeUnsupportedImages && /\.(svg|webp|tiff?)$/i.test(path)) {
-            epubZip.remove(path);
+            try {
+                var unsupImgData = await zipFile.async('arraybuffer');
+                var unsupProcessed = await processImage(unsupImgData, settings.maxWidth, settings.grayscale);
+                if (unsupProcessed) {
+                    var unsupJpegPath = path.replace(/\.[^.]+$/, '.jpg');
+                    epubZip.remove(path);
+                    epubZip.file(unsupJpegPath, unsupProcessed);
+                    imageRenames[path] = unsupJpegPath;
+                } else {
+                    epubZip.remove(path);
+                }
+            } catch (e) {
+                epubZip.remove(path);
+            }
             continue;
         }
 
@@ -1815,8 +1829,81 @@ async function optimizeEpub(file) {
             var imgData = await zipFile.async('arraybuffer');
             var processedImg = await processImage(imgData, settings.maxWidth, settings.grayscale);
             if (processedImg) {
-                epubZip.file(path, processedImg);
+                if (/\.(png|bmp|gif)$/i.test(path)) {
+                    var jpegPath = path.replace(/\.[^.]+$/, '.jpg');
+                    epubZip.remove(path);
+                    epubZip.file(jpegPath, processedImg);
+                    imageRenames[path] = jpegPath;
+                } else {
+                    epubZip.file(path, processedImg);
+                }
             }
+        }
+    }
+
+    // Update HTML/XHTML references for renamed images
+    if (Object.keys(imageRenames).length > 0) {
+        var allFiles = Object.keys(epubZip.files);
+        for (var j = 0; j < allFiles.length; j++) {
+            var htmlPath = allFiles[j];
+            if (!/\.(html|xhtml|htm)$/i.test(htmlPath)) continue;
+            var htmlContent = await epubZip.files[htmlPath].async('string');
+            var htmlChanged = false;
+            var renameKeys = Object.keys(imageRenames);
+            for (var ri = 0; ri < renameKeys.length; ri++) {
+                var oldImg = renameKeys[ri];
+                var newImg = imageRenames[oldImg];
+                var oldRef = getRelativePath(htmlPath, oldImg);
+                var newRef = getRelativePath(htmlPath, newImg);
+                if (htmlContent.indexOf(oldRef) !== -1) {
+                    htmlContent = htmlContent.split(oldRef).join(newRef);
+                    htmlChanged = true;
+                }
+            }
+            if (htmlChanged) {
+                epubZip.file(htmlPath, htmlContent);
+            }
+        }
+
+        // Update OPF manifest: rename hrefs and fix media-type
+        for (var k = 0; k < allFiles.length; k++) {
+            var opfPath = allFiles[k];
+            if (!/\.opf$/i.test(opfPath)) continue;
+            var opf = await epubZip.files[opfPath].async('string');
+            var opfRenameKeys = Object.keys(imageRenames);
+            for (var oi = 0; oi < opfRenameKeys.length; oi++) {
+                var oldImg = opfRenameKeys[oi];
+                var newImg = imageRenames[oldImg];
+                var oldHref = getRelativePath(opfPath, oldImg);
+                var newHref = getRelativePath(opfPath, newImg);
+                opf = opf.split(oldHref).join(newHref);
+                // Update id attribute (typically the basename without path)
+                var oldBasename = oldImg.split('/').pop();
+                var newBasename = newImg.split('/').pop();
+                if (oldBasename !== newBasename) {
+                    var oldIdEsc = oldBasename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    var hrefEscForId = newHref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    // Handle either attribute order (id before or after href)
+                    opf = opf.replace(
+                        new RegExp('(<item\\b[^>]*\\bhref="' + hrefEscForId + '"[^>]*?)\\bid="' + oldIdEsc + '"'),
+                        '$1id="' + newBasename + '"'
+                    );
+                    opf = opf.replace(
+                        new RegExp('(<item\\b[^>]*?)\\bid="' + oldIdEsc + '"([^>]*\\bhref="' + hrefEscForId + '")'),
+                        '$1id="' + newBasename + '"$2'
+                    );
+                }
+                var hrefEsc = newHref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                opf = opf.replace(
+                    new RegExp('(<item\\b[^>]*\\bhref="' + hrefEsc + '"[^>]*?)\\bmedia-type="[^"]*"'),
+                    '$1media-type="image/jpeg"'
+                );
+                opf = opf.replace(
+                    new RegExp('(<item\\b[^>]*?)\\bmedia-type="[^"]*"([^>]*\\bhref="' + hrefEsc + '")'),
+                    '$1media-type="image/jpeg"$2'
+                );
+            }
+            epubZip.file(opfPath, opf);
         }
     }
 
@@ -1924,6 +2011,23 @@ async function processImage(imgData, maxWidth, toGrayscale) {
         img.onerror = function() { resolve(null); };
         img.src = URL.createObjectURL(blob);
     });
+}
+
+function getRelativePath(fromFile, toFile) {
+    var fromParts = fromFile.split('/');
+    fromParts.pop(); // remove filename, keep directory
+    var toParts = toFile.split('/');
+
+    var common = 0;
+    while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+        common++;
+    }
+
+    var ups = fromParts.length - common;
+    var result = [];
+    for (var i = 0; i < ups; i++) result.push('..');
+    for (var j = common; j < toParts.length; j++) result.push(toParts[j]);
+    return result.join('/');
 }
 
 // ==================== Utility Functions ====================
