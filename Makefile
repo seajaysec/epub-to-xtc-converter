@@ -1,8 +1,10 @@
 # Makefile for EPUB to XTC Converter & Optimizer
 
-.PHONY: all serve docker-serve cli-install cli-convert cli-optimize tag help
+.PHONY: all serve docker-serve cli-install cli-convert cli-optimize \
+        wasm-build wasm-run wasm-install wasm tag help
 
 PORT ?= 8000
+WASM_OUT ?= wasm-build/out
 
 # Default target
 all: help
@@ -28,6 +30,29 @@ cli-convert: ## Convert EPUB to XTC. Usage: make cli-convert INPUT=book.epub OUT
 
 cli-optimize: ## Optimize EPUB for e-paper. Usage: make cli-optimize INPUT=book.epub OUTPUT=optimized.epub CONFIG=settings.json
 	@cd cli && node index.js optimize $(INPUT) -o $(OUTPUT) -c $(CONFIG)
+
+## WASM rebuild:
+
+wasm-build: ## Build the Docker image that compiles crengine.wasm from source (~15 min first run)
+	@docker build -t crengine-wasm-build wasm-build
+
+wasm-run: ## Run the build inside the image; produces wasm-build/out/crengine.{js,wasm}
+	@mkdir -p $(WASM_OUT)
+	@docker run --rm -v "$(abspath $(WASM_OUT)):/out" crengine-wasm-build
+	@ls -la $(WASM_OUT)
+
+wasm-install: ## Drop the freshly built artifacts into web/ (preserves vendored copies on first run)
+	@test -f $(WASM_OUT)/crengine.wasm && test -f $(WASM_OUT)/crengine.js || { echo "Missing artifacts in $(WASM_OUT)/ (need crengine.js and crengine.wasm). Run 'make wasm-run' first."; exit 1; }
+	@if [ ! -f web/crengine.js.vendored ] || [ ! -f web/crengine.wasm.vendored ]; then \
+		echo "Snapshotting current web/crengine.{js,wasm} -> .vendored (missing copies only)"; \
+	fi
+	@[ -f web/crengine.js.vendored ]   || cp web/crengine.js   web/crengine.js.vendored
+	@[ -f web/crengine.wasm.vendored ] || cp web/crengine.wasm web/crengine.wasm.vendored
+	@cp $(WASM_OUT)/crengine.js   web/crengine.js
+	@cp $(WASM_OUT)/crengine.wasm web/crengine.wasm
+	@echo "Installed:"; ls -la web/crengine.js web/crengine.wasm
+
+wasm: wasm-build wasm-run wasm-install ## End-to-end: build image, run build, install into web/
 
 ## Release:
 

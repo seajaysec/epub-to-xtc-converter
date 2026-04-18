@@ -206,7 +206,7 @@ Then open http://localhost:8000 in your browser.
 
 ### Web App
 - [JSZip](https://stuk.github.io/jszip/) - ZIP file handling (loaded from CDN)
-- CREngine - EPUB rendering (bundled as WASM)
+- CREngine - EPUB rendering (bundled as WASM, see [docs/building-crengine-wasm.md](docs/building-crengine-wasm.md) for provenance and rebuild notes)
 - Google Fonts (loaded on demand): Literata, Lora, Merriweather, Source Serif 4, Noto Serif, Noto Sans, Open Sans, Roboto, EB Garamond, Crimson Pro
 - Custom TTF/OTF font upload also supported
 
@@ -240,7 +240,8 @@ The site will be available at `https://<username>.github.io/epub-optimizer-xtein
 
 ## Credits
 
-- CREngine from [CoolReader](https://github.com/nickvantassel/literata-font)
+- CREngine from [CoolReader](https://github.com/buggins/coolreader)
+- CREngine WASM build by [fdkevin0](https://github.com/fdkevin0/x4converter.rho.sh) (vendored unmodified — see [docs/building-crengine-wasm.md](docs/building-crengine-wasm.md))
 - XTC format specification from [CrazyCoder's Gist](https://gist.github.com/CrazyCoder/b125f26d6987c0620058249f59f1327d)
 - Inspired by [x4converter.rho.sh](https://x4converter.rho.sh)
 
