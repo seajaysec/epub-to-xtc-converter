@@ -1,0 +1,28 @@
+name: Sync with upstream
+
+# Keeps this fork up to date with bigbag/epub-to-xtc-converter so we have
+# takedown insurance and a stable, controllable source for vendoring into
+# the calibre-xtc plugin.
+#
+# - Runs nightly via cron, can be triggered manually.
+# - Fast-forward only. If upstream rewrites history or branches diverge,
+#   the action fails loudly so we can investigate manually rather than
+#   silently overwriting work.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Sync fork from upstream
+        run: gh repo sync "$REPO" --source bigbag/epub-to-xtc-converter --branch main
