@@ -260,13 +260,11 @@ async function convertSingleFile(inputPath, outputPath, settings) {
 }
 
 async function convertDirectory(inputDir, outputDir, settings) {
-    // Find all EPUB files
-    const files = fs.readdirSync(inputDir)
-        .filter(f => f.endsWith('.epub'))
-        .map(f => path.join(inputDir, f));
+    // Recursively find all EPUB files, preserving relative paths
+    const files = collectEpubFiles(inputDir, { recursive: true, include: '*.epub' }, inputDir);
 
     if (files.length === 0) {
-        console.error('No EPUB files found in directory');
+        console.error('No EPUB files found in directory (searched recursively)');
         process.exit(1);
     }
 
@@ -282,23 +280,26 @@ async function convertDirectory(inputDir, outputDir, settings) {
 
     console.log(`Converting ${files.length} EPUB file(s)...\n`);
 
+    const ext = settings.output.format === 'xtch' ? '.xtch' : '.xtc';
     let successCount = 0;
     let failCount = 0;
 
     for (let i = 0; i < files.length; i++) {
-        const inputPath = files[i];
-        const filename = path.basename(inputPath);
-        const outputPath = getOutputPath(inputPath, outputDir, settings.output.format);
+        const file = files[i];
+        const relNoExt = file.relative.slice(0, -path.extname(file.relative).length);
+        const outputPath = path.join(outputDir, relNoExt + ext);
 
-        console.log(`[${i + 1}/${files.length}] ${filename}`);
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+        console.log(`[${i + 1}/${files.length}] ${file.relative}`);
 
         try {
-            const result = await convertEpub(inputPath, outputPath, settings, (current, total) => {
+            const result = await convertEpub(file.absolute, outputPath, settings, (current, total) => {
                 const percent = Math.round((current / total) * 100);
                 process.stdout.write(`\r  Progress: ${current}/${total} pages (${percent}%)`);
             });
 
-            console.log(`\n  Output: ${path.basename(result.outputPath)}`);
+            console.log(`\n  Output: ${path.relative(outputDir, result.outputPath)}`);
             console.log(`  Pages: ${result.pageCount}\n`);
             successCount++;
 
