@@ -82,7 +82,8 @@ node index.js init
 # Convert single file
 node index.js convert book.epub -o book.xtc -c settings.json
 
-# Convert all EPUBs in a directory
+# Convert all EPUBs in a directory (recurses into subdirectories,
+# mirroring their structure under the output directory)
 node index.js convert ./epubs/ -o ./output/ -c settings.json
 
 # Use XTCH format (2-bit grayscale)
